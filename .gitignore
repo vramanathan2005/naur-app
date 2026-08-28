@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.streamlit/secrets.toml
+data/photos/
+data/photo_thumbs/
+data/photo_features.json
+data/models/
+outputs/

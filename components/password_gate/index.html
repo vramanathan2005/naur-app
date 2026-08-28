@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        color: #2f352f;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .login-card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 14px 14px 22px;
+        overflow: hidden;
+        border: 1px solid rgba(74, 117, 86, .23);
+        border-radius: 25px;
+        background: rgba(255, 255, 255, .70);
+        box-shadow: 0 22px 55px rgba(55, 85, 64, .12), inset 0 1px 0 rgba(255, 255, 255, .88);
+        backdrop-filter: blur(18px);
+    }
+    .login-card::before {
+        content: "";
+        position: absolute;
+        width: 190px;
+        height: 190px;
+        left: -85px;
+        top: -115px;
+        border-radius: 50%;
+        background: rgba(133, 198, 153, .27);
+        filter: blur(6px);
+        pointer-events: none;
+    }
+    .field { position: relative; z-index: 1; min-width: 0; }
+    label {
+        display: block;
+        margin-bottom: 5px;
+        color: #66806d;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+    }
+    input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: #283029;
+        font-size: 21px;
+        font-weight: 650;
+        letter-spacing: .035em;
+        padding: 3px 62px 3px 0;
+    }
+    input::placeholder { color: rgba(65, 79, 68, .38); font-weight: 500; }
+    .reveal {
+        position: absolute;
+        right: 2px;
+        bottom: 2px;
+        border: 0;
+        background: transparent;
+        color: #68816f;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .05em;
+        padding: 7px;
+    }
+    .enter {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 64px;
+        height: 64px;
+        border: 0;
+        border-radius: 20px;
+        background: linear-gradient(145deg, #75aa83, #3d7053);
+        box-shadow: 0 10px 25px rgba(55, 107, 73, .26);
+        color: white;
+        cursor: pointer;
+        transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+    }
+    .enter:hover { transform: translateY(-2px) rotate(-2deg); box-shadow: 0 14px 30px rgba(55, 107, 73, .31); }
+    .enter:active { transform: scale(.96); }
+    .enter svg { width: 25px; height: 25px; }
+    .hint {
+        margin: 10px 5px 0;
+        color: rgba(68, 82, 71, .58);
+        font-size: 12px;
+        letter-spacing: .015em;
+    }
+    .shake { animation: shake .34s ease; }
+    @keyframes shake {
+        25% { transform: translateX(-7px); }
+        50% { transform: translateX(6px); }
+        75% { transform: translateX(-3px); }
+    }
+</style>
+</head>
+<body>
+    <div class="login-card" id="card">
+        <div class="field">
+            <label for="password">the secret word</label>
+            <input id="password" type="password" placeholder="enter it here" autocomplete="current-password" autofocus>
+            <button class="reveal" id="reveal" type="button" aria-label="Show password">show</button>
+        </div>
+        <button class="enter" id="enter" type="button" aria-label="Enter">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
+    <div class="hint">press enter when you’re ready</div>
+<script>
+    const input = document.getElementById("password");
+    const card = document.getElementById("card");
+    const reveal = document.getElementById("reveal");
+
+    function send(type, extra = {}) {
+        window.parent.postMessage({isStreamlitMessage: true, type, ...extra}, "*");
+    }
+    function setHeight() {
+        send("streamlit:setFrameHeight", {height: 128});
+    }
+    function submitPassword() {
+        if (!input.value) {
+            card.classList.remove("shake");
+            void card.offsetWidth;
+            card.classList.add("shake");
+            input.focus();
+            return;
+        }
+        send("streamlit:setComponentValue", {
+            value: {password: input.value, nonce: Date.now()},
+            dataType: "json"
+        });
+    }
+
+    window.addEventListener("message", event => {
+        if (event.data?.type === "streamlit:render") setHeight();
+    });
+    reveal.addEventListener("click", () => {
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        reveal.textContent = showing ? "show" : "hide";
+        reveal.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        input.focus();
+    });
+    document.getElementById("enter").addEventListener("click", submitPassword);
+    input.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            submitPassword();
+        }
+    });
+
+    send("streamlit:componentReady", {apiVersion: 1});
+    setHeight();
+</script>
+</body>
+</html>

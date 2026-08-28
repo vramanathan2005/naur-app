@@ -17,6 +17,9 @@ PASSWORD_COMPONENT = st.components.v1.declare_component(
     "naur_password_gate",
     path=str(Path(__file__).parent / "components" / "password_gate"),
 )
+DEPLOYMENT_PASSWORD_HASH = (
+    "03b5d69347d29b617bd372db3db7b65bfe97115006d7d0d06515277ff2ce9712"
+)
 
 
 st.set_page_config(
@@ -32,7 +35,9 @@ def require_password() -> None:
     if st.session_state.get("app_authenticated"):
         return
 
-    expected_hash = str(st.secrets.get("APP_PASSWORD_SHA256", ""))
+    expected_hash = str(
+        st.secrets.get("APP_PASSWORD_SHA256", DEPLOYMENT_PASSWORD_HASH)
+    )
     st.markdown(
         """
         <style>

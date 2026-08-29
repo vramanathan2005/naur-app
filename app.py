@@ -17,6 +17,10 @@ PASSWORD_COMPONENT = st.components.v1.declare_component(
     "naur_password_gate",
     path=str(Path(__file__).parent / "components" / "password_gate"),
 )
+AUDIO_PLAYER_COMPONENT = st.components.v1.declare_component(
+    "naur_audio_player",
+    path=str(Path(__file__).parent / "components" / "audio_player"),
+)
 DEPLOYMENT_PASSWORD_HASH = (
     "03b5d69347d29b617bd372db3db7b65bfe97115006d7d0d06515277ff2ce9712"
 )
@@ -1369,7 +1373,7 @@ def audio_data_uri(audio_path: str) -> str:
     return f"data:audio/mpeg;base64,{encoded}"
 
 
-def custom_audio_player(
+def _legacy_custom_audio_player(
     audio_path: str,
     palette: dict[str, str | int],
     autoplay: bool = False,
@@ -1590,6 +1594,31 @@ def custom_audio_player(
         </script>
         """,
         height=174,
+    )
+
+
+def custom_audio_player(
+    audio_path: str,
+    previous_audio_path: str | None,
+    next_audio_path: str | None,
+    palette: dict[str, str | int],
+    autoplay: bool = False,
+) -> dict[str, str | int] | None:
+    """Render the connected player and return navigation events."""
+    return AUDIO_PLAYER_COMPONENT(
+        source=audio_data_uri(audio_path),
+        previous_source=(
+            audio_data_uri(previous_audio_path) if previous_audio_path else None
+        ),
+        next_source=audio_data_uri(next_audio_path) if next_audio_path else None,
+        palette={
+            "accent": palette["accent"],
+            "soft": palette["album_one"],
+            "mid": palette["album_two"],
+        },
+        autoplay=autoplay,
+        default=None,
+        key="connected_audio_player",
     )
 
 
@@ -1834,6 +1863,8 @@ if "shuffle_count" not in st.session_state:
     st.session_state.shuffle_count = 0
 if "autoplay_song" not in st.session_state:
     st.session_state.autoplay_song = False
+if "player_event_nonce" not in st.session_state:
+    st.session_state.player_event_nonce = None
 
 
 preview_wordles = st.query_params.get("preview_wordles") == "1"
@@ -1986,6 +2017,14 @@ if st.session_state.show_result:
     with song_column:
         st.markdown('<div class="result-label">Your song for right now</div>', unsafe_allow_html=True)
         if selected_song:
+            previous_song = select_mood_song(
+                st.session_state.mood_text,
+                st.session_state.shuffle_count - 1,
+            )
+            next_song = select_mood_song(
+                st.session_state.mood_text,
+                st.session_state.shuffle_count + 1,
+            )
             song_title = html.escape(selected_song["title"])
             song_artist = html.escape(selected_song["artist"])
             artwork_uri = album_art_data_uri(selected_song["album"])
@@ -2010,17 +2049,34 @@ if st.session_state.show_result:
                 unsafe_allow_html=True,
             )
             with st.container(key="player_controls"):
-                custom_audio_player(
+                player_event = custom_audio_player(
                     selected_song["audio_path"],
+                    previous_song["audio_path"] if previous_song else None,
+                    next_song["audio_path"] if next_song else None,
                     palette,
                     autoplay=st.session_state.autoplay_song,
                 )
+                if isinstance(player_event, dict):
+                    event_nonce = player_event.get("nonce")
+                    event_action = player_event.get("action")
+                    if (
+                        event_nonce
+                        and event_nonce != st.session_state.player_event_nonce
+                        and event_action in {"next", "previous"}
+                    ):
+                        st.session_state.player_event_nonce = event_nonce
+                        st.session_state.shuffle_count += (
+                            1 if event_action == "next" else -1
+                        )
+                        st.session_state.autoplay_song = True
+                        st.rerun()
                 st.session_state.autoplay_song = False
                 with st.container(key="player_actions"):
                     action_a, action_b = st.columns(2, gap="small")
                     with action_a:
                         if st.button("Previous song", key="previous_song"):
                             st.session_state.shuffle_count -= 1
+                            st.session_state.autoplay_song = True
                             st.rerun()
                     with action_b:
                         if st.button("Next song", key="next_song"):

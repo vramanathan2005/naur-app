@@ -1,0 +1,267 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+    * { box-sizing: border-box; }
+    :root {
+        --accent: #55775f;
+        --accent-soft: #afc5a5;
+        --accent-mid: #78977d;
+        --ink: #2f2a27;
+        --muted: #746c66;
+    }
+    html, body {
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .player {
+        background: rgba(255,255,255,.4);
+        border: 1px solid rgba(255,255,255,.72);
+        border-radius: 24px;
+        box-shadow: 0 12px 30px rgba(47,42,39,.1);
+        padding: 18px 24px 16px;
+    }
+    .play {
+        align-items: center;
+        background: linear-gradient(145deg, var(--accent-soft), var(--accent-mid));
+        border: 0;
+        border-radius: 50%;
+        box-shadow: 0 8px 22px rgba(47,42,39,.18);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        grid-column: 3;
+        height: 68px;
+        justify-content: center;
+        justify-self: center;
+        margin: 0;
+        padding: 0;
+        transition: transform .18s ease, box-shadow .18s ease;
+        width: 68px;
+    }
+    .play::before {
+        border-bottom: 11px solid transparent;
+        border-left: 18px solid currentColor;
+        border-top: 11px solid transparent;
+        content: "";
+        display: block;
+        margin-left: 4px;
+    }
+    .play:hover { box-shadow: 0 11px 27px rgba(47,42,39,.24); transform: translateY(-1px) scale(1.02); }
+    .play:active { transform: scale(.96); }
+    .play.playing::before {
+        background: linear-gradient(to right, currentColor 0 6px, transparent 6px 12px, currentColor 12px 18px);
+        border: 0;
+        height: 22px;
+        margin-left: 0;
+        width: 18px;
+    }
+    .timeline { display: block; }
+    .time-row {
+        color: var(--muted);
+        display: flex;
+        font-size: .68rem;
+        font-variant-numeric: tabular-nums;
+        justify-content: space-between;
+        margin-top: 5px;
+    }
+    input[type="range"] {
+        appearance: none;
+        background: linear-gradient(to right, var(--accent) 0 var(--fill, 0%), rgba(65,58,53,.14) var(--fill, 0%) 100%);
+        border-radius: 999px;
+        cursor: pointer;
+        height: 6px;
+        margin: 0;
+        outline: none;
+        width: 100%;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        background: white;
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        box-shadow: 0 2px 7px rgba(47,42,39,.18);
+        height: 15px;
+        width: 15px;
+    }
+    .controls {
+        align-items: center;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 76px minmax(0, 1fr) minmax(0, 1fr);
+        margin-top: 7px;
+    }
+    .control {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: var(--ink);
+        cursor: pointer;
+        display: flex;
+        font-size: 1.45rem;
+        height: 54px;
+        justify-content: center;
+        margin: auto;
+        min-width: 48px;
+        padding: 0;
+        transition: color .18s ease, transform .18s ease;
+    }
+    .control:hover { color: var(--accent); transform: translateY(-1px); }
+    .control:active { transform: scale(.92); }
+    .control.saved { color: var(--accent); }
+    .queue { font-size: 1.55rem; line-height: .65; }
+    .skip { font-size: 1.28rem; }
+    .heart { font-family: Georgia, serif; font-size: 2rem; }
+    @media (max-width: 430px) {
+        .player { padding: 15px 14px 13px; }
+        .play { height: 60px; width: 60px; }
+        .control { min-width: 40px; }
+    }
+</style>
+</head>
+<body>
+    <div class="player">
+        <div class="timeline">
+            <input id="progress" type="range" min="0" max="1000" value="0" aria-label="Song progress">
+            <div class="time-row">
+                <span id="elapsed">0:00</span>
+                <span id="duration">0:00</span>
+            </div>
+        </div>
+        <div class="controls">
+            <button class="control queue" id="queue" aria-label="Mute">☰</button>
+            <button class="control skip" id="back" aria-label="Previous song">◀┃</button>
+            <button class="play" id="play" aria-label="Play song"></button>
+            <button class="control skip" id="forward" aria-label="Next song">┃▶</button>
+            <button class="control heart" id="heart" aria-label="Favorite">♡</button>
+        </div>
+    </div>
+    <audio id="audio" preload="metadata"></audio>
+<script>
+    const audio = document.getElementById("audio");
+    const play = document.getElementById("play");
+    const progress = document.getElementById("progress");
+    const elapsed = document.getElementById("elapsed");
+    const duration = document.getElementById("duration");
+    const back = document.getElementById("back");
+    const forward = document.getElementById("forward");
+    const heart = document.getElementById("heart");
+    const queue = document.getElementById("queue");
+
+    let activeSource = "";
+    let previousSource = null;
+    let nextSource = null;
+    let navigationLocked = false;
+
+    function send(type, extra = {}) {
+        window.parent.postMessage({isStreamlitMessage: true, type, ...extra}, "*");
+    }
+    function setHeight() {
+        send("streamlit:setFrameHeight", {height: 174});
+    }
+    function componentValue(value) {
+        send("streamlit:setComponentValue", {value, dataType: "json"});
+    }
+    function formatTime(seconds) {
+        if (!Number.isFinite(seconds)) return "0:00";
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
+        return `${mins}:${secs}`;
+    }
+    function paintRange(percent) {
+        progress.style.setProperty("--fill", `${percent}%`);
+    }
+    function setPlaying(isPlaying) {
+        play.classList.toggle("playing", isPlaying);
+        play.setAttribute("aria-label", isPlaying ? "Pause song" : "Play song");
+    }
+    function startPlayback() {
+        const attempt = () => audio.play().catch(() => {});
+        if (audio.readyState >= 3) attempt();
+        else audio.addEventListener("canplay", attempt, {once: true});
+    }
+    function loadSource(source, shouldPlay) {
+        if (!source) return;
+        if (source !== activeSource) {
+            activeSource = source;
+            audio.src = source;
+            audio.load();
+            progress.value = 0;
+            elapsed.textContent = "0:00";
+            paintRange(0);
+        }
+        if (shouldPlay) startPlayback();
+    }
+    function navigate(action) {
+        if (navigationLocked) return;
+        const replacement = action === "next" ? nextSource : previousSource;
+        if (!replacement) return;
+        navigationLocked = true;
+
+        // Start the neighboring track in this same frame before Streamlit reruns.
+        // This preserves playback permission from the click or ended audio event.
+        loadSource(replacement, true);
+        componentValue({action, nonce: `${Date.now()}-${Math.random()}`});
+        setTimeout(() => { navigationLocked = false; }, 1200);
+    }
+    function applyRender(args) {
+        const palette = args.palette || {};
+        document.documentElement.style.setProperty("--accent", palette.accent || "#55775f");
+        document.documentElement.style.setProperty("--accent-soft", palette.soft || "#afc5a5");
+        document.documentElement.style.setProperty("--accent-mid", palette.mid || "#78977d");
+        previousSource = args.previous_source || null;
+        nextSource = args.next_source || null;
+        loadSource(args.source, Boolean(args.autoplay));
+        navigationLocked = false;
+        setHeight();
+    }
+
+    window.addEventListener("message", event => {
+        if (event.data?.type === "streamlit:render") applyRender(event.data.args || {});
+    });
+    audio.volume = .82;
+    audio.addEventListener("loadedmetadata", () => {
+        duration.textContent = formatTime(audio.duration);
+    });
+    audio.addEventListener("timeupdate", () => {
+        const percent = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        progress.value = Math.round(percent * 10);
+        paintRange(percent);
+        elapsed.textContent = formatTime(audio.currentTime);
+    });
+    audio.addEventListener("ended", () => {
+        setPlaying(false);
+        navigate("next");
+    });
+    audio.addEventListener("play", () => setPlaying(true));
+    audio.addEventListener("pause", () => {
+        if (!audio.ended) setPlaying(false);
+    });
+    play.addEventListener("click", () => audio.paused ? audio.play() : audio.pause());
+    progress.addEventListener("input", () => {
+        const percent = Number(progress.value) / 10;
+        paintRange(percent);
+        if (audio.duration) audio.currentTime = (percent / 100) * audio.duration;
+    });
+    back.addEventListener("click", () => navigate("previous"));
+    forward.addEventListener("click", () => navigate("next"));
+    queue.addEventListener("click", () => {
+        audio.muted = !audio.muted;
+        queue.style.opacity = audio.muted ? ".38" : "1";
+        queue.setAttribute("aria-label", audio.muted ? "Unmute" : "Mute");
+    });
+    heart.addEventListener("click", () => {
+        const saved = heart.classList.toggle("saved");
+        heart.textContent = saved ? "♥" : "♡";
+        heart.setAttribute("aria-label", saved ? "Remove favorite" : "Favorite");
+    });
+
+    send("streamlit:componentReady", {apiVersion: 1});
+    setHeight();
+</script>
+</body>
+</html>
